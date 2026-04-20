@@ -104,6 +104,44 @@ def test_explicit_encryption_key_env_takes_precedence_over_existing_key_file(mon
     assert TokenEncryptor(key=env_key).decrypt(encrypted) == "secret-token"
 
 
+def test_previous_encryption_keys_allow_decrypt_after_primary_key_change(monkeypatch, temp_key_file):
+    old_primary_key = Fernet.generate_key()
+    new_primary_key = Fernet.generate_key()
+
+    monkeypatch.setenv("CODEX_LB_ENCRYPTION_KEY", old_primary_key.decode("ascii"))
+    from app.core.config.settings import get_settings
+
+    get_settings.cache_clear()
+    encrypted = TokenEncryptor().encrypt("secret-token")
+
+    monkeypatch.setenv("CODEX_LB_ENCRYPTION_KEY", new_primary_key.decode("ascii"))
+    monkeypatch.setenv("CODEX_LB_ENCRYPTION_PREVIOUS_KEYS", old_primary_key.decode("ascii"))
+    get_settings.cache_clear()
+
+    assert TokenEncryptor().decrypt(encrypted) == "secret-token"
+    reencrypted = TokenEncryptor().encrypt("fresh-secret")
+    with pytest.raises(InvalidToken):
+        TokenEncryptor(key=old_primary_key).decrypt(reencrypted)
+    assert TokenEncryptor(key=new_primary_key).decrypt(reencrypted) == "fresh-secret"
+
+
+def test_existing_key_file_remains_a_decrypt_fallback_when_primary_env_key_changes(monkeypatch, temp_key_file):
+    file_key = Fernet.generate_key()
+    new_primary_key = Fernet.generate_key()
+    temp_key_file.write_bytes(file_key)
+    if os.name != "nt":
+        temp_key_file.chmod(0o600)
+
+    encrypted = TokenEncryptor(key=file_key).encrypt("secret-token")
+
+    monkeypatch.setenv("CODEX_LB_ENCRYPTION_KEY", new_primary_key.decode("ascii"))
+    from app.core.config.settings import get_settings
+
+    get_settings.cache_clear()
+
+    assert TokenEncryptor().decrypt(encrypted) == "secret-token"
+
+
 def test_token_encryptor_invalid_token_raises():
     encryptor = TokenEncryptor()
     with pytest.raises(InvalidToken):

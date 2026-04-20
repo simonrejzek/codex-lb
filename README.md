@@ -73,7 +73,7 @@ docker logs codex-lb
 # ============================================
 ```
 
-Open the dashboard → enter the token + new password → done. The token is shared across replicas and remains valid until a password is set. In multi-replica setups, replicas must share the same encryption key (the Helm chart default) for restart recovery to work.
+Open the dashboard → enter the token + new password → done. The token is shared across replicas and remains valid until a password is set. In multi-replica setups, replicas must share the same encryption key (the Helm chart default) for restart recovery to work. When rotating keys, keep the new key in `CODEX_LB_ENCRYPTION_KEY` and place older keys in `CODEX_LB_ENCRYPTION_PREVIOUS_KEYS` until existing stored secrets have been refreshed.
 
 **Manual token:** To use a fixed token instead, set the env var before starting:
 

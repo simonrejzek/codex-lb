@@ -167,6 +167,7 @@ class Settings(BaseSettings):
     sticky_session_cleanup_enabled: bool = True
     sticky_session_cleanup_interval_seconds: int = Field(default=300, gt=0)
     encryption_key: str | None = None
+    encryption_previous_keys: Annotated[list[str], NoDecode] = Field(default_factory=list)
     encryption_key_file: Path = DEFAULT_ENCRYPTION_KEY_FILE
     database_migrations_fail_fast: bool = True
     log_proxy_request_shape: bool = False
@@ -279,6 +280,31 @@ class Settings(BaseSettings):
             Fernet(stripped.encode("ascii"))
             return stripped
         raise TypeError("encryption_key must be a Fernet key string")
+
+    @field_validator("encryption_previous_keys", mode="before")
+    @classmethod
+    def _normalize_encryption_previous_keys(cls, value: object) -> list[str]:
+        if value is None:
+            return []
+        raw_items: list[str] = []
+        if isinstance(value, str):
+            raw_items = [item.strip() for item in value.split(",")]
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    raw_items.append(item.strip())
+                else:
+                    raise TypeError("encryption_previous_keys must contain Fernet key strings")
+        else:
+            raise TypeError("encryption_previous_keys must be a list or comma-separated string")
+
+        keys: list[str] = []
+        for item in raw_items:
+            if not item:
+                continue
+            Fernet(item.encode("ascii"))
+            keys.append(item)
+        return keys
 
     @field_validator("image_inline_allowed_hosts", mode="before")
     @classmethod
