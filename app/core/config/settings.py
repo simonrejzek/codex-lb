@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
+from cryptography.fernet import Fernet
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -165,6 +166,7 @@ class Settings(BaseSettings):
     http_responses_session_bridge_advertise_base_url: str | None = None
     sticky_session_cleanup_enabled: bool = True
     sticky_session_cleanup_interval_seconds: int = Field(default=300, gt=0)
+    encryption_key: str | None = None
     encryption_key_file: Path = DEFAULT_ENCRYPTION_KEY_FILE
     database_migrations_fail_fast: bool = True
     log_proxy_request_shape: bool = False
@@ -264,6 +266,19 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return Path(value).expanduser()
         raise TypeError("encryption_key_file must be a path")
+
+    @field_validator("encryption_key", mode="before")
+    @classmethod
+    def _normalize_encryption_key(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            Fernet(stripped.encode("ascii"))
+            return stripped
+        raise TypeError("encryption_key must be a Fernet key string")
 
     @field_validator("image_inline_allowed_hosts", mode="before")
     @classmethod
