@@ -120,9 +120,17 @@ async def ensure_auto_bootstrap_token() -> str | None:
                 logger.warning(
                     "Stored bootstrap token could not be decrypted; leaving existing token valid. "
                     "Configure CODEX_LB_DASHBOARD_BOOTSTRAP_TOKEN or restore a shared encryption key "
-                    "to recover it.",
+                    "to recover it. Rotating to a new bootstrap token with the current key.",
                     exc_info=True,
                 )
+                token = secrets.token_urlsafe(32)
+                rotated = await repository.replace_bootstrap_token(
+                    _get_encryptor().encrypt(token),
+                    _hash_bootstrap_token(token),
+                )
+                if rotated:
+                    await get_settings_cache().invalidate()
+                    return token
                 return None
 
         token = secrets.token_urlsafe(32)

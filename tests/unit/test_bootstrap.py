@@ -166,3 +166,45 @@ async def test_ensure_auto_bootstrap_token_reuses_existing_encrypted_token(monke
 
     assert await bootstrap_module.ensure_auto_bootstrap_token() == "shared-auto-token"
     repository.store_bootstrap_token_if_absent.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ensure_auto_bootstrap_token_rotates_when_stored_token_cannot_be_decrypted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_settings(monkeypatch, token=None)
+    encryptor = _patch_encryptor(monkeypatch)
+
+    async def _get_settings() -> SimpleNamespace:
+        return SimpleNamespace(
+            password_hash=None,
+            bootstrap_token_encrypted=b"not-decryptable",
+            bootstrap_token_hash=hashlib.sha256("stale-token".encode("utf-8")).digest(),
+        )
+
+    repository = SimpleNamespace(
+        get_settings=AsyncMock(side_effect=_get_settings),
+        clear_bootstrap_token=AsyncMock(),
+        store_bootstrap_token_if_absent=AsyncMock(),
+        replace_bootstrap_token=AsyncMock(return_value=True),
+    )
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return object()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    invalidate = AsyncMock()
+    monkeypatch.setattr(bootstrap_module, "SessionLocal", lambda: _SessionContext())
+    monkeypatch.setattr(bootstrap_module, "DashboardAuthRepository", lambda _session: repository)
+    monkeypatch.setattr(bootstrap_module, "get_settings_cache", lambda: SimpleNamespace(invalidate=invalidate))
+    monkeypatch.setattr(bootstrap_module.secrets, "token_urlsafe", lambda _n: "rotated-bootstrap-token")
+
+    assert await bootstrap_module.ensure_auto_bootstrap_token() == "rotated-bootstrap-token"
+    repository.replace_bootstrap_token.assert_awaited_once()
+    encrypted_arg, hash_arg = repository.replace_bootstrap_token.await_args.args
+    assert encryptor.decrypt(encrypted_arg) == "rotated-bootstrap-token"
+    assert hash_arg == hashlib.sha256("rotated-bootstrap-token".encode("utf-8")).digest()
+    invalidate.assert_awaited_once()
